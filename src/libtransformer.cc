@@ -413,6 +413,10 @@ ModelInstanceState::ModelInstanceState(
     : BackendModelInstance(model_state, triton_model_instance),
       model_state_(model_state)
 {
+  // int layer_para_rank, layer_para_mpi_size;
+  // MPICHECK( MPI_Comm_rank(MPI_COMM_WORLD, &layer_para_rank));
+  // MPICHECK( MPI_Comm_size(MPI_COMM_WORLD, &layer_para_mpi_size));
+  // printf("MPI Rank is %d of %d ..........................................\n", layer_para_rank, layer_para_mpi_size);
   //if (Kind() == TRITONSERVER_INSTANCEGROUPKIND_GPU) {
     LOG_MESSAGE(TRITONSERVER_LOG_WARN,
                 (std::string("Faster transformer model instance is created at GPU '") +
@@ -964,6 +968,9 @@ extern "C" {
 TRITONSERVER_Error*
 TRITONBACKEND_Initialize(TRITONBACKEND_Backend* backend)
 {
+  //MPI Initialize
+  MPI_Init(NULL, NULL);
+  
   const char* cname;
   RETURN_IF_ERROR(TRITONBACKEND_BackendName(backend, &cname));
   std::string name(cname);
@@ -1013,9 +1020,35 @@ TRITONBACKEND_Initialize(TRITONBACKEND_Backend* backend)
 //  NCCLCHECK( ncclCommInitRank(&tensor_para_nccl_comm, tensor_para_size, tensor_para_nccl_uid, tensor_para_rank));
 //  NCCLCHECK( ncclCommInitRank(&layer_para_nccl_comm, layer_para_size, layer_para_nccl_uid, layer_para_rank));
 
+  std::string* state = new std::string("backend state");
+  RETURN_IF_ERROR(
+      TRITONBACKEND_BackendSetState(backend, reinterpret_cast<void*>(state)));
 
   return nullptr;  // success
 }
+
+// Implementing TRITONBACKEND_Finalize is optional unless state is set
+// using TRITONBACKEND_BackendSetState. The backend must free this
+// state and perform any other global cleanup.
+TRITONSERVER_Error*
+TRITONBACKEND_Finalize(TRITONBACKEND_Backend* backend)
+{
+  void* vstate;
+  RETURN_IF_ERROR(TRITONBACKEND_BackendState(backend, &vstate));
+  std::string* state = reinterpret_cast<std::string*>(vstate);
+
+  LOG_MESSAGE(
+      TRITONSERVER_LOG_INFO,
+      (std::string("TRITONBACKEND_Finalize: state is '") + *state + "'")
+          .c_str());
+
+  delete state;
+
+  // Finalize: Not working
+  // MPI_Finalize();
+  return nullptr;  // success
+}
+
 
 TRITONSERVER_Error*
 TRITONBACKEND_ModelInitialize(TRITONBACKEND_Model* model)
@@ -1055,6 +1088,10 @@ TRITONBACKEND_ModelFinalize(TRITONBACKEND_Model* model)
 
   delete model_state;
 
+  // Finalize: Not working
+  // MPI_Finalize();
+  
+
   return nullptr;  // success
 }
 
@@ -1090,6 +1127,8 @@ TRITONBACKEND_ModelInstanceInitialize(TRITONBACKEND_ModelInstance* instance)
   RETURN_IF_ERROR(TRITONBACKEND_ModelInstanceSetState(
       instance, reinterpret_cast<void*>(instance_state)));
 
+  // Finalize: Working
+  // MPI_Finalize();
   return nullptr;  // success
 }
 
@@ -1107,6 +1146,8 @@ TRITONBACKEND_ModelInstanceFinalize(TRITONBACKEND_ModelInstance* instance)
 
   delete instance_state;
 
+  // Finalize: Not Working
+  // MPI_Finalize();
   return nullptr;  // success
 }
 
