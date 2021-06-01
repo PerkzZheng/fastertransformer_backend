@@ -190,6 +190,7 @@ ModelState::ModelState(TRITONBACKEND_Model* triton_model)
                    param_get_int("layer_para_batch_size"),
                    param_get_float("probability_threshold"),
                    param_get_int("is_fuse_QKV"),
+                   param_get_float("repetition_penalty"),//add repetition_penalty
                    param_get("model_name"),
                    modelVersionPath));
   else
@@ -206,6 +207,7 @@ ModelState::ModelState(TRITONBACKEND_Model* triton_model)
                    param_get_int("layer_para_batch_size"),
                    param_get_float("probability_threshold"),
                    param_get_int("is_fuse_QKV"),
+                   param_get_float("repetition_penalty"),//add repetition_penalty
                    param_get("model_name"),
                    modelVersionPath));
 
@@ -964,6 +966,16 @@ extern "C" {
 TRITONSERVER_Error*
 TRITONBACKEND_Initialize(TRITONBACKEND_Backend* backend)
 {
+   
+  MPI_Init(NULL, NULL);
+  int world_size;
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+  // Get the rank of the process
+  int world_rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+  printf("MPI Rank: %d, MPI Size: %d  ................................. \n ", world_rank, world_size);
+  
   const char* cname;
   RETURN_IF_ERROR(TRITONBACKEND_BackendName(backend, &cname));
   std::string name(cname);
@@ -1035,10 +1047,11 @@ TRITONBACKEND_ModelInitialize(TRITONBACKEND_Model* model)
 
   // Create a ModelState object and associate it with the
   // TRITONBACKEND_Model.
-  ModelState* model_state;
-  RETURN_IF_ERROR(ModelState::Create(model, &model_state));
-  RETURN_IF_ERROR(
-      TRITONBACKEND_ModelSetState(model, reinterpret_cast<void*>(model_state)));
+  //TODO
+  // ModelState* model_state;
+  // RETURN_IF_ERROR(ModelState::Create(model, &model_state));
+  // RETURN_IF_ERROR(
+  //     TRITONBACKEND_ModelSetState(model, reinterpret_cast<void*>(model_state)));
 
   return nullptr;  // success
 }
@@ -1046,15 +1059,15 @@ TRITONBACKEND_ModelInitialize(TRITONBACKEND_Model* model)
 TRITONSERVER_Error*
 TRITONBACKEND_ModelFinalize(TRITONBACKEND_Model* model)
 {
-  void* vstate;
-  RETURN_IF_ERROR(TRITONBACKEND_ModelState(model, &vstate));
-  ModelState* model_state = reinterpret_cast<ModelState*>(vstate);
+  // void* vstate;
+  // RETURN_IF_ERROR(TRITONBACKEND_ModelState(model, &vstate));
+  // ModelState* model_state = reinterpret_cast<ModelState*>(vstate);
 
   LOG_MESSAGE(
       TRITONSERVER_LOG_INFO, "TRITONBACKEND_ModelFinalize: delete model state");
 
-  delete model_state;
-
+  // delete model_state;
+  MPI_Finalize();
   return nullptr;  // success
 }
 
@@ -1075,20 +1088,20 @@ TRITONBACKEND_ModelInstanceInitialize(TRITONBACKEND_ModelInstance* instance)
           .c_str());
 
   // Get the model state associated with this instance's model.
-  TRITONBACKEND_Model* model;
-  RETURN_IF_ERROR(TRITONBACKEND_ModelInstanceModel(instance, &model));
+  // TRITONBACKEND_Model* model;
+  // RETURN_IF_ERROR(TRITONBACKEND_ModelInstanceModel(instance, &model));
 
-  void* vmodelstate;
-  RETURN_IF_ERROR(TRITONBACKEND_ModelState(model, &vmodelstate));
-  ModelState* model_state = reinterpret_cast<ModelState*>(vmodelstate);
+  // void* vmodelstate;
+  // RETURN_IF_ERROR(TRITONBACKEND_ModelState(model, &vmodelstate));
+  // ModelState* model_state = reinterpret_cast<ModelState*>(vmodelstate);
 
-  // Create a ModelInstanceState object and associate it with the
-  // TRITONBACKEND_ModelInstance.
-  ModelInstanceState* instance_state;
-  RETURN_IF_ERROR(
-      ModelInstanceState::Create(model_state, instance, &instance_state));
-  RETURN_IF_ERROR(TRITONBACKEND_ModelInstanceSetState(
-      instance, reinterpret_cast<void*>(instance_state)));
+  // // Create a ModelInstanceState object and associate it with the
+  // // TRITONBACKEND_ModelInstance.
+  // ModelInstanceState* instance_state;
+  // RETURN_IF_ERROR(
+  //     ModelInstanceState::Create(model_state, instance, &instance_state));
+  // RETURN_IF_ERROR(TRITONBACKEND_ModelInstanceSetState(
+  //     instance, reinterpret_cast<void*>(instance_state)));
 
   return nullptr;  // success
 }
@@ -1096,16 +1109,16 @@ TRITONBACKEND_ModelInstanceInitialize(TRITONBACKEND_ModelInstance* instance)
 TRITONSERVER_Error*
 TRITONBACKEND_ModelInstanceFinalize(TRITONBACKEND_ModelInstance* instance)
 {
-  void* vstate;
-  RETURN_IF_ERROR(TRITONBACKEND_ModelInstanceState(instance, &vstate));
-  ModelInstanceState* instance_state =
-      reinterpret_cast<ModelInstanceState*>(vstate);
+  // void* vstate;
+  // RETURN_IF_ERROR(TRITONBACKEND_ModelInstanceState(instance, &vstate));
+  // ModelInstanceState* instance_state =
+  //     reinterpret_cast<ModelInstanceState*>(vstate);
 
   LOG_MESSAGE(
       TRITONSERVER_LOG_INFO,
       "TRITONBACKEND_ModelInstanceFinalize: delete instance state");
 
-  delete instance_state;
+  // delete instance_state;
 
   return nullptr;  // success
 }
@@ -1122,10 +1135,10 @@ TRITONBACKEND_ModelInstanceExecute(
   // 'instance' objects). Suggested practice for this is to use only
   // function-local and model-instance-specific state (obtained from
   // 'instance'), which is what we do here.
-  ModelInstanceState* instance_state;
-  RETURN_IF_ERROR(TRITONBACKEND_ModelInstanceState(
-      instance, reinterpret_cast<void**>(&instance_state)));
-  ModelState* model_state = instance_state->StateForModel();
+  // ModelInstanceState* instance_state;
+  // RETURN_IF_ERROR(TRITONBACKEND_ModelInstanceState(
+  //     instance, reinterpret_cast<void**>(&instance_state)));
+  // ModelState* model_state = instance_state->StateForModel();
 
   // This backend specifies BLOCKING execution policy. That means that
   // we should not return from this function until execution is
@@ -1133,19 +1146,19 @@ TRITONBACKEND_ModelInstanceExecute(
   // from this function so that it is again available to be used for
   // another call to TRITONBACKEND_ModelInstanceExecute.
 
-  LOG_MESSAGE(
-      TRITONSERVER_LOG_WARN,
-      (std::string("model ") + model_state->Name() + ", instance " +
-       instance_state->Name() + ", executing " + std::to_string(request_count) +
-       " requests")
-          .c_str());
+  // LOG_MESSAGE(
+  //     TRITONSERVER_LOG_WARN,
+  //     (std::string("model ") + model_state->Name() + ", instance " +
+  //      instance_state->Name() + ", executing " + std::to_string(request_count) +
+  //      " requests")
+  //         .c_str());
 
   // At this point we accept ownership of 'requests', which means that
   // even if something goes wrong we must still return success from
   // this function. If something does go wrong in processing a
   // particular request then we send an error response just for the
   // specific request.
-  instance_state->ProcessRequests(requests, request_count);
+  // instance_state->ProcessRequests(requests, request_count);
 
   return nullptr;  // success
 }
