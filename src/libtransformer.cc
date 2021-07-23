@@ -1,29 +1,3 @@
-// Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions
-// are met:
-//  * Redistributions of source code must retain the above copyright
-//    notice, this list of conditions and the following disclaimer.
-//  * Redistributions in binary form must reproduce the above copyright
-//    notice, this list of conditions and the following disclaimer in the
-//    documentation and/or other materials provided with the distribution.
-//  * Neither the name of NVIDIA CORPORATION nor the names of its
-//    contributors may be used to endorse or promote products derived
-//    from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-// OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 #include <stdint.h>
 #include <exception>
 #include <string>
@@ -95,9 +69,9 @@ class ModelState : public BackendModel {
   TRITONSERVER_Error* AutoCompleteConfig();
   std::shared_ptr<AbstractTransformerModel> ftModel;
   int node_id, gpu_size, world_size;
-  ncclComm_t tensor_nccl_comms[8];
-  ncclComm_t layer_nccl_comms[8];
-  cudaStream_t streams_[8];
+  std::vector<ncclComm_t> tensor_nccl_comms;
+  std::vector<ncclComm_t> layer_nccl_comms;
+  std::vector<cudaStream_t> streams_;
   std::vector<ncclUniqueId> nccl_ids;
 };
 
@@ -222,6 +196,10 @@ ModelState::ModelState(TRITONBACKEND_Model* triton_model)
   
   
   CUDACHECK(cudaGetDeviceCount(&gpu_size));
+
+  tensor_nccl_comms.resize(gpu_size);
+  layer_nccl_comms.resize(gpu_size);
+  streams_.resize(gpu_size);
 
   assert(tensor_para_size <= gpu_size);
 
@@ -374,7 +352,7 @@ class ModelInstanceState : public BackendModelInstance {
   std::string model_path_;
 
 
-  std::unique_ptr<AbstractTransformerModelInstance> ft_model_instance_[8];
+  std::vector<std::unique_ptr<AbstractTransformerModelInstance>> ft_model_instance_;
 
   // Map from configuration name for an input to the index of
   // that input in the model.
@@ -440,7 +418,7 @@ ModelInstanceState::ModelInstanceState(
 
   std::vector<std::thread> threads;
   int gpu_size = model_state->GetGpuSize();
-
+  ft_model_instance_.resize(gpu_size);
   for(int gid = 0; gid < gpu_size; gid ++) {
     threads.push_back(std::thread(ThreadLoadModel,
                                   model_state,
